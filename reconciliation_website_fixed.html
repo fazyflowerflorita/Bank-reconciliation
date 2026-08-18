@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Bank Reconciliation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Wait for XLSX to load
+        let xlsxReady = false;
+        let attempts = 0;
+        const checkXLSX = setInterval(() => {
+            if (typeof XLSX !== 'undefined') {
+                xlsxReady = true;
+                console.log('✓ XLSX library loaded');
+                clearInterval(checkXLSX);
+            } else if (attempts++ > 50) {
+                console.error('XLSX failed to load after 5 seconds');
+                clearInterval(checkXLSX);
+            }
+        }, 100);
+    </script>
+    <style>
+        :root {
+            --primary: #215db0;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --muted: #6b7280;
+            --bg: #f9fafb;
+            --border: #e5e7eb;
+            --text: #1f2937;
+            --green: #b7f7c4;
+            --yellow: #fff3a3;
+            --red: #ffc2c2;
+            --orange: #ffd49a;
+            --purple: #dfc7ff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, #1d4a8a 100%);
+            color: white;
+            padding: 32px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            margin: 0 0 8px 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        header p {
+            margin: 0;
+            opacity: 0.95;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .section {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .section h2 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            color: var(--primary);
+            font-size: 20px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 12px;
+        }
+
+        .upload-area {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .upload-area {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .upload-box {
+            display: block;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafafa;
+            position: relative;
+        }
+
+        .upload-box:hover {
+            border-color: var(--primary);
+            background: #f0f4ff;
+        }
+
+        .upload-box.dragover {
+            border-color: var(--primary);
+            background: #e0ebff;
+        }
+
+        .upload-box input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .upload-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text);
+        }
+
+        .upload-hint {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 8px;
+        }
+
+        .file-info {
+            margin-top: 12px;
+            padding: 8px;
+            background: #e8f5e9;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #2e7d32;
+            display: none;
+        }
+
+        .file-info.active {
+            display: block;
+        }
+
+        .controls {
+            background: #f5f7fb;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .control-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .control-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(33, 93, 176, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4a8a;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-top: 6px;
+        }
+
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            background: #f3f4f6;
+            position: sticky;
+            top: 0;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        tbody tr:hover {
+            background-color: #f9fafb;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .message.success {
+            background: #dcfce7;
+            color: #166534;
+            border-left: 4px solid #22c55e;
+        }
+
+        .message.error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+
+        .privacy-notice {
+            background: #e0f2fe;
+            border: 1px solid #0284c7;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #0c4a6e;
+            margin-bottom: 20px;
+        }
+
+        .privacy-notice strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        #resultSection {
+            display: none;
+        }
+
+        .download-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏦 Intelligent Bank Reconciliation</h1>
+        <p>Client-side reconciliation with zero server storage. Upload, match, and download instantly.</p>
+    </header>
+
+    <div class="container">
+        <div class="privacy-notice">
+            <strong>🔒 Privacy & Security:</strong>
+            All processing happens in your browser. No files are uploaded to any server. Data is completely cleared when you close this page or upload new files.
+        </div>
+
+        <div class="section">
+            <h2>📤 Upload Files</h2>
+            <div class="upload-area">
+                <div class="upload-box" id="bankUploadBox">
+                    <span class="upload-icon">🏦</span>
+                    <span class="upload-label">Bank Statement</span>
+                    <span class="upload-hint">PDF or Excel (.xlsx)</span>
+                    <div class="file-info" id="bankInfo">Click to upload</div>
+                    <input type="file" id="bankFile" accept=".pdf,.xlsx" style="display: none;" />
+                </div>
+                <div class="upload-box" id="ledgerUploadBox">
+                    <span class="upload-icon">📊</span>
+                    <span class="upload-label">MSD/GL Ledger</span>
+                    <span class="upload-hint">Excel (.xlsx) or PDF</span>
+                    <div class="file-info" id="ledgerInfo">Click to upload</div>
+                    <input type="file" id="ledgerFile" accept=".pdf,.xlsx" style="display: none;" />
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>⚙️ Matching Configuration</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="dateTolerance">Date Tolerance (days)</label>
+                    <input type="number" id="dateTolerance" min="0" max="30" value="3" />
+                </div>
+                <div class="control-group">
+                    <label for="amountTolerance">Amount Tolerance (%)</label>
+                    <input type="number" id="amountTolerance" min="0" max="100" value="0.5" step="0.1" />
+                </div>
+                <div class="control-group">
+                    <label for="fuzzyThreshold">Fuzzy Match Threshold (%)</label>
+                    <input type="number" id="fuzzyThreshold" min="0" max="100" value="72" />
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-primary" id="reconcileBtn" onclick="reconcile()" disabled>
+                    ▶ Reconcile Files
+                </button>
+                <button class="btn-secondary" onclick="clearAll()">
+                    🗑️ Clear All Data
+                </button>
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: var(--green);"></div>
+                    <span><strong>Green:</strong> Exact Match</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: var(--yellow);"></div>
+                    <span><strong>Yellow:</strong> Fuzzy Match</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: var(--red);"></div>
+                    <span><strong>Red:</strong> Unmatched</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: var(--orange);"></div>
+                    <span><strong>Orange:</strong> Duplicate</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: var(--purple);"></div>
+                    <span><strong>Purple:</strong> Missing Entry</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultSection" class="section" style="display: none;">
+            <h2>📊 Reconciliation Results</h2>
+            <div id="messages"></div>
+            <div class="metrics" id="metricsContainer"></div>
+            <div class="download-group">
+                <button class="btn-primary" onclick="downloadExcel()">📥 Download Excel Report</button>
+                <button class="btn-secondary" onclick="downloadJSON()">📥 Download JSON Data</button>
+            </div>
+        </div>
+
+        <div id="tableSection" class="section" style="display: none;">
+            <h2>📋 Reconciliation Table</h2>
+            <div class="table-wrapper">
+                <table id="resultTable">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Bank Date</th>
+                            <th>Bank Amount</th>
+                            <th>Bank Ref</th>
+                            <th>Bank Description</th>
+                            <th>Ledger Date</th>
+                            <th>Ledger Amount</th>
+                            <th>Ledger Ref</th>
+                            <th>Ledger Description</th>
+                            <th>Match Score</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let bankData = null;
+        let ledgerData = null;
+        let reconciliationResult = null;
+
+        // Set up upload box click handlers
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded, setting up upload handlers');
+
+            const bankBox = document.getElementById('bankUploadBox');
+            const ledgerBox = document.getElementById('ledgerUploadBox');
+            const bankFile = document.getElementById('bankFile');
+            const ledgerFile = document.getElementById('ledgerFile');
+
+            if (bankBox) {
+                bankBox.addEventListener('click', function() {
+                    console.log('Bank box clicked');
+                    bankFile?.click();
+                });
+            }
+
+            if (ledgerBox) {
+                ledgerBox.addEventListener('click', function() {
+                    console.log('Ledger box clicked');
+                    ledgerFile?.click();
+                });
+            }
+
+            if (bankFile) {
+                bankFile.addEventListener('change', function(e) {
+                    console.log('Bank file selected:', this.files[0]?.name);
+                    handleFileUpload(e, 'bank');
+                });
+            }
+
+            if (ledgerFile) {
+                ledgerFile.addEventListener('change', function(e) {
+                    console.log('Ledger file selected:', this.files[0]?.name);
+                    handleFileUpload(e, 'ledger');
+                });
+            }
+        });
+
+        function handleFileUpload(event, type) {
+            try {
+                const file = event.target.files[0];
+                if (!file) {
+                    console.log('No file selected');
+                    showMessage('No file selected', 'error');
+                    return;
+                }
+
+                console.log(`${type} file selected:`, file.name, 'Size:', file.size);
+                showMessage(`Processing ${file.name}...`, 'success');
+
+                parseFile(file).then(data => {
+                    console.log(`✅ ${type} file parsed:`, data.length, 'transactions');
+                    console.log('Updating UI for:', type);
+
+                    if (type === 'bank') {
+                        bankData = { data, name: file.name };
+                        const infoEl = document.getElementById('bankInfo');
+                        console.log('bankInfo element:', infoEl);
+                        if (infoEl) {
+                            infoEl.textContent = `✓ ${file.name} (${data.length} transactions)`;
+                            infoEl.style.color = '#16a34a';
+                            infoEl.style.fontWeight = 'bold';
+                            console.log('✓ Bank file UI updated');
+                        }
+                    } else if (type === 'ledger') {
+                        ledgerData = { data, name: file.name };
+                        const infoEl = document.getElementById('ledgerInfo');
+                        console.log('ledgerInfo element:', infoEl);
+                        if (infoEl) {
+                            infoEl.textContent = `✓ ${file.name} (${data.length} transactions)`;
+                            infoEl.style.color = '#16a34a';
+                            infoEl.style.fontWeight = 'bold';
+                            console.log('✓ Ledger file UI updated');
+                        }
+                    }
+
+                    updateReconcileButton();
+                    const msg = `✓ ${type.toUpperCase()}: ${data.length} transactions loaded`;
+                    console.log('Showing message:', msg);
+                    showMessage(msg, 'success');
+                }).catch(error => {
+                    console.error(`${type} error:`, error);
+                    showMessage(`Error: ${error.message}`, 'error');
+                });
+            } catch (error) {
+                console.error('Upload error:', error);
+                showMessage(`Upload failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function parseFile(file) {
+            if (file.name.toLowerCase().endsWith('.pdf')) {
+                return await parsePDF(file);
+            } else if (file.name.toLowerCase().endsWith('.xlsx')) {
+                return parseExcel(file);
+            }
+            throw new Error('Unsupported file format. Use PDF or XLSX.');
+        }
+
+        function parseExcel(file) {
+            return new Promise((resolve, reject) => {
+                // Check if XLSX is loaded
+                if (typeof XLSX === 'undefined') {
+                    reject(new Error('XLSX library is not available. Please wait for the page to fully load and try again.'));
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        console.log('Reading Excel file...');
+                        const data = new Uint8Array(e.target.result);
+
+                        // Parse workbook
+                        const workbook = XLSX.read(data, { type: 'array', defval: '' });
+                        console.log('Workbook loaded, sheets:', workbook.SheetNames);
+
+                        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                            throw new Error('No sheets found in workbook');
+                        }
+
+                        // Try each sheet and collect all transactions found
+                        let allTransactions = [];
+
+                        for (const sheetName of workbook.SheetNames) {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const sheetData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+                            if (sheetData && sheetData.length > 0) {
+                                console.log(`Sheet "${sheetName}": ${sheetData.length} rows`);
+
+                                // Use standardizeTransactions directly - it handles all formats
+                                const sheetTransactions = standardizeTransactions(sheetData);
+
+                                if (sheetTransactions && sheetTransactions.length > 0) {
+                                    console.log(`  → Found ${sheetTransactions.length} transactions`);
+                                    allTransactions = allTransactions.concat(sheetTransactions);
+                                }
+                            }
+                        }
+
+                        if (allTransactions.length === 0) {
+                            console.warn('No transaction data found in any Excel sheet');
+                            resolve([]);
+                            return;
+                        }
+
+                        console.log('Total transactions from all sheets:', allTransactions.length);
+                        resolve(allTransactions);
+                    } catch (error) {
+                        console.error('Parse error:', error);
+                        reject(error);
+                    }
+                };
+                reader.onerror = (error) => {
+                    console.error('Read error:', error);
+                    reject(new Error('Failed to read file: ' + error.message));
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+
+
+        async function parsePDF(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const pdf = await pdfjsLib.getDocument(e.target.result).promise;
+                        let allText = '';
+                        const pages = [];
+
+                        console.log('PDF has', pdf.numPages, 'pages');
+
+                        // Extract text from all pages
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const text = await page.getTextContent();
+                            const pageText = text.items.map(item => item.str).join(' ');
+                            pages.push(pageText);
+                            allText += '\n--- PAGE ' + i + ' ---\n' + pageText;
+                        }
+
+                        // Convert PDF text to row-based format for standardizeTransactions
+                        // Look for any lines with both date and amount patterns
+                        const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+                        const transactions = [];
+                        for (const line of lines) {
+                            // Look for date pattern
+                            const dateMatch = line.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})|(\d{1,2}-\d{1,2}-\d{4})|(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})/);
+
+                            // Look for amounts with decimals
+                            const amounts = [...line.matchAll(/[\d,]+\.\d{2}/g)];
+
+                            // If we found both date and amount, create a row-like object
+                            if (dateMatch && amounts.length > 0) {
+                                transactions.push({
+                                    'Date': dateMatch[0],
+                                    'Amount': parseFloat(amounts[amounts.length - 1][0].replace(/,/g, '')),
+                                    'Description': line.replace(dateMatch[0], '').replace(/[\d,]+\.\d{2}/g, '').trim().substring(0, 100),
+                                    'Reference': ''
+                                });
+                            }
+                        }
+
+                        console.log('PDF extraction: Found', transactions.length, 'lines with date+amount');
+
+                        // Now standardize everything
+                        const standardized = standardizeTransactions(transactions);
+                        console.log('PDF extraction: Extracted', standardized.length, 'transactions');
+                        resolve(standardized);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Failed to read PDF'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+
+
+        function standardizeTransactions(raw) {
+            if (!Array.isArray(raw) || raw.length === 0) return [];
+
+            console.log('Standardizing', raw.length, 'raw rows');
+
+            // MINIMAL filtering - just remove completely empty rows
+            const cleanedRaw = raw.filter((row) => {
+                const values = Object.values(row);
+                return values.some(v => v !== null && v !== undefined && String(v).trim() !== '');
+            });
+
+            console.log('After cleaning:', cleanedRaw.length, 'rows');
+
+            const results = [];
+
+            for (let rowIdx = 0; rowIdx < cleanedRaw.length; rowIdx++) {
+                const row = cleanedRaw[rowIdx];
+                const keys = Object.keys(row);
+                const values = Object.values(row);
+
+                console.log(`Row ${rowIdx}:`, row);
+
+                let dateValue = null;
+                let amountValue = null;
+                let dateColIdx = -1;
+                let amountColIdx = -1;
+
+                // Find FIRST date and LAST amount (last is often transaction, not balance)
+                for (let i = 0; i < keys.length; i++) {
+                    const val = values[i];
+                    const valStr = String(val || '').trim();
+                    const valNum = parseFloat(valStr);
+
+                    // Look for date (any format)
+                    if (dateValue === null) {
+                        // Check for text date formats first
+                        if (valStr.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/) ||      // 5/5/26, 05/05/2026
+                            valStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/) ||         // 5-5-2026
+                            valStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/) ||         // 2026-5-5
+                            valStr.match(/^\d+\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i) || // 5 May 2026
+                            valStr.match(/^\d{1,2}\s+\w{3}\s+\d{4}$/)) {       // 05 May 2026
+                            dateValue = valStr;
+                            dateColIdx = i;
+                            console.log(`  Col ${i} (${keys[i]}): DATE = ${valStr}`);
+                        }
+                        // Check for Excel serial date numbers (convert to date string)
+                        else if (!isNaN(valNum) && valNum > 30000 && valNum < 60000) {
+                            // Convert Excel serial date to ISO date string
+                            // Excel epoch is Dec 30, 1899
+                            const excelEpoch = new Date(1899, 11, 30);
+                            const dateObj = new Date(excelEpoch.getTime() + valNum * 86400000);
+                            dateValue = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+                            dateColIdx = i;
+                            console.log(`  Col ${i} (${keys[i]}): EXCEL DATE ${valNum} → ${dateValue}`);
+                        }
+                    }
+
+                    // Look for amount (keep last one found - usually transaction, not balance)
+                    if (!isNaN(valNum) && valNum !== 0) {
+                        const absVal = Math.abs(valNum);
+                        // Accept amounts between 0.01 and 10 million
+                        if (absVal >= 0.01 && absVal < 10000000) {
+                            amountValue = valNum;
+                            amountColIdx = i;
+                            console.log(`  Col ${i} (${keys[i]}): AMOUNT = ${valNum}`);
+                        }
+                    }
+                }
+
+                // Create transaction if we found both date and amount
+                if (dateValue && amountValue !== null && dateColIdx !== -1 && amountColIdx !== -1) {
+                    const date = parseMultiFormatDate(dateValue);
+
+                    if (date) {
+                        // Build description from other columns
+                        const description = values
+                            .map((v, i) => i !== dateColIdx && i !== amountColIdx ? String(v).trim() : '')
+                            .filter(v => v.length > 0)
+                            .join(' ')
+                            .substring(0, 200);
+
+                        results.push({
+                            date: date,
+                            amount: amountValue,
+                            reference: '',
+                            description: description
+                        });
+
+                        console.log(`✓ Row ${rowIdx}: Found transaction - ${dateValue} | ${amountValue}`);
+                    } else {
+                        console.log(`✗ Row ${rowIdx}: Date parsing failed for: ${dateValue}`);
+                    }
+                } else {
+                    console.log(`✗ Row ${rowIdx}: Missing date or amount (dateValue=${dateValue}, amountValue=${amountValue})`);
+                }
+            }
+
+            console.log(`Extracted ${results.length} transactions from ${cleanedRaw.length} rows`);
+            return results;
+        }
+
+        function parseMultiFormatDate(dateStr) {
+            if (!dateStr) return null;
+
+            // Try various date formats
+            const formats = [
+                // DD/MM/YYYY
+                /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
+                // DD-MM-YYYY
+                /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
+                // YYYY-MM-DD
+                /^(\d{4})-(\d{1,2})-(\d{1,2})$/,
+                // MM/DD/YYYY
+                /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
+            ];
+
+            for (const format of formats) {
+                const match = dateStr.match(format);
+                if (match) {
+                    const [_, first, second, third] = match;
+                    // Try DD/MM/YYYY first (most common in bank statements)
+                    try {
+                        const d = new Date(third, second - 1, first);
+                        if (!isNaN(d.getTime())) return d;
+                    } catch (e) {}
+                }
+            }
+
+            // Fallback to JavaScript date parsing
+            const d = new Date(dateStr);
+            return !isNaN(d.getTime()) ? d : null;
+        }
+
+        function updateReconcileButton() {
+            document.getElementById('reconcileBtn').disabled = !bankData || !ledgerData;
+        }
+
+        function reconcile() {
+            if (!bankData || !ledgerData) {
+                showMessage('Please upload both files', 'error');
+                return;
+            }
+
+            try {
+                const config = {
+                    date_tolerance_days: parseInt(document.getElementById('dateTolerance').value),
+                    amount_tolerance: parseFloat(document.getElementById('amountTolerance').value) / 100,
+                    fuzzy_threshold: parseInt(document.getElementById('fuzzyThreshold').value)
+                };
+
+                reconciliationResult = performReconciliation(bankData.data, ledgerData.data, config);
+                displayResults(reconciliationResult);
+                document.getElementById('resultSection').style.display = 'block';
+                document.getElementById('tableSection').style.display = 'block';
+                showMessage('Reconciliation completed successfully', 'success');
+            } catch (error) {
+                showMessage(`Reconciliation error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        function performReconciliation(bank, ledger, config) {
+            const result = [];
+            const usedBank = new Set();
+            const usedLedger = new Set();
+
+            // Exact matching - with improved handling for data quality issues
+            for (let bi = 0; bi < bank.length; bi++) {
+                if (usedBank.has(bi)) continue;
+                const b = bank[bi];
+
+                for (let li = 0; li < ledger.length; li++) {
+                    if (usedLedger.has(li)) continue;
+                    const l = ledger[li];
+
+                    // More lenient date tolerance (bank vs ledger often have 1-2 day differences)
+                    const dateDiff = Math.abs(b.date - l.date) / (1000 * 60 * 60 * 24);
+
+                    // Check if amounts match within tolerance (handles floating-point precision)
+                    const amountDiff = Math.abs(b.amount - l.amount);
+                    const amountTolerance = Math.max(0.01, Math.abs(b.amount) * 0.0001); // 0.01 or 0.01% whichever is larger
+
+                    if (dateDiff <= 1 && amountDiff <= amountTolerance) {
+                        // Check if reference or description match
+                        const refMatch = b.reference && l.reference && b.reference.toLowerCase() === l.reference.toLowerCase();
+                        const descMatch = b.description && l.description &&
+                                         normalizeText(b.description) === normalizeText(l.description);
+
+                        if (refMatch || descMatch || (!b.reference && !l.reference) || (!b.description && !l.description)) {
+                            result.push({
+                                status: 'Exact Match',
+                                bank_date: formatDate(b.date),
+                                bank_amount: b.amount.toFixed(2),
+                                bank_ref: b.reference,
+                                bank_desc: b.description,
+                                ledger_date: formatDate(l.date),
+                                ledger_amount: l.amount.toFixed(2),
+                                ledger_ref: l.reference,
+                                ledger_desc: l.description,
+                                score: 100,
+                                notes: 'Perfect match'
+                            });
+                            usedBank.add(bi);
+                            usedLedger.add(li);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            function normalizeText(text) {
+                return String(text)
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ')
+                    .replace(/[^\w\s]/g, '')
+                    .trim();
+            }
+
+            // Fuzzy matching
+            for (let bi = 0; bi < bank.length; bi++) {
+                if (usedBank.has(bi)) continue;
+                const b = bank[bi];
+                let bestMatch = null;
+                let bestScore = -1;
+
+                for (let li = 0; li < ledger.length; li++) {
+                    if (usedLedger.has(li)) continue;
+                    const l = ledger[li];
+
+                    const dateDiff = Math.abs(b.date - l.date) / (1000 * 60 * 60 * 24);
+                    const amountDiff = Math.abs(b.amount - l.amount) / Math.max(Math.abs(b.amount), 1);
+
+                    if (dateDiff <= config.date_tolerance_days && amountDiff <= config.amount_tolerance) {
+                        const score = Math.max(
+                            stringSimilarity(b.description, l.description),
+                            stringSimilarity(b.reference, l.reference)
+                        );
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMatch = li;
+                        }
+                    }
+                }
+
+                if (bestScore >= config.fuzzy_threshold) {
+                    const l = ledger[bestMatch];
+                    result.push({
+                        status: 'Fuzzy Match',
+                        bank_date: formatDate(b.date),
+                        bank_amount: b.amount.toFixed(2),
+                        bank_ref: b.reference,
+                        bank_desc: b.description,
+                        ledger_date: formatDate(l.date),
+                        ledger_amount: l.amount.toFixed(2),
+                        ledger_ref: l.reference,
+                        ledger_desc: l.description,
+                        score: Math.round(bestScore),
+                        notes: 'Similar match'
+                    });
+                    usedBank.add(bi);
+                    usedLedger.add(bestMatch);
+                }
+            }
+
+            // Unmatched
+            for (let bi = 0; bi < bank.length; bi++) {
+                if (!usedBank.has(bi)) {
+                    const b = bank[bi];
+                    result.push({
+                        status: 'Missing Entry',
+                        bank_date: formatDate(b.date),
+                        bank_amount: b.amount.toFixed(2),
+                        bank_ref: b.reference,
+                        bank_desc: b.description,
+                        ledger_date: '-',
+                        ledger_amount: '-',
+                        ledger_ref: '-',
+                        ledger_desc: '-',
+                        score: 0,
+                        notes: 'In bank only'
+                    });
+                }
+            }
+
+            for (let li = 0; li < ledger.length; li++) {
+                if (!usedLedger.has(li)) {
+                    const l = ledger[li];
+                    result.push({
+                        status: 'Missing Entry',
+                        bank_date: '-',
+                        bank_amount: '-',
+                        bank_ref: '-',
+                        bank_desc: '-',
+                        ledger_date: formatDate(l.date),
+                        ledger_amount: l.amount.toFixed(2),
+                        ledger_ref: l.reference,
+                        ledger_desc: l.description,
+                        score: 0,
+                        notes: 'In ledger only'
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        function stringSimilarity(str1, str2) {
+            if (!str1 || !str2) return 0;
+            const longer = str1.length > str2.length ? str1 : str2;
+            const shorter = str1.length > str2.length ? str2 : str1;
+            const editDistance = getEditDistance(shorter, longer);
+            return ((longer.length - editDistance) / longer.length) * 100;
+        }
+
+        function getEditDistance(s1, s2) {
+            const costs = [];
+            for (let i = 0; i <= s1.length; i++) {
+                let lastValue = i;
+                for (let j = 0; j <= s2.length; j++) {
+                    if (i === 0) {
+                        costs[j] = j;
+                    } else if (j > 0) {
+                        let newValue = costs[j - 1];
+                        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+                            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                        }
+                        costs[j - 1] = lastValue;
+                        lastValue = newValue;
+                    }
+                }
+                if (i > 0) costs[s2.length] = lastValue;
+            }
+            return costs[s2.length];
+        }
+
+        function formatDate(date) {
+            if (!date || isNaN(date.getTime())) return '-';
+            return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        }
+
+        function displayResults(results) {
+            const tbody = document.getElementById('resultBody');
+            tbody.innerHTML = '';
+
+            const statusColors = {
+                'Exact Match': 'var(--green)',
+                'Fuzzy Match': 'var(--yellow)',
+                'Missing Entry': 'var(--purple)',
+            };
+
+            results.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.style.backgroundColor = statusColors[row.status] || 'white';
+                tr.innerHTML = `
+                    <td><strong>${row.status}</strong></td>
+                    <td>${row.bank_date}</td>
+                    <td>${row.bank_amount}</td>
+                    <td>${row.bank_ref}</td>
+                    <td>${row.bank_desc}</td>
+                    <td>${row.ledger_date}</td>
+                    <td>${row.ledger_amount}</td>
+                    <td>${row.ledger_ref}</td>
+                    <td>${row.ledger_desc}</td>
+                    <td>${row.score}%</td>
+                    <td>${row.notes}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const summary = {
+                'Exact Match': results.filter(r => r.status === 'Exact Match').length,
+                'Fuzzy Match': results.filter(r => r.status === 'Fuzzy Match').length,
+                'Missing': results.filter(r => r.status === 'Missing Entry').length,
+            };
+
+            const metricsHtml = `
+                <div class="metric-card">
+                    <div class="metric-value">${results.length}</div>
+                    <div class="metric-label">Total</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${summary['Exact Match']}</div>
+                    <div class="metric-label">Exact</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${summary['Fuzzy Match']}</div>
+                    <div class="metric-label">Fuzzy</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${summary['Missing']}</div>
+                    <div class="metric-label">Exceptions</div>
+                </div>
+            `;
+            document.getElementById('metricsContainer').innerHTML = metricsHtml;
+        }
+
+        function downloadExcel() {
+            if (!reconciliationResult) return;
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(reconciliationResult);
+            XLSX.utils.book_append_sheet(wb, ws, "Reconciliation");
+            XLSX.writeFile(wb, "reconciliation_report.xlsx");
+        }
+
+        function downloadJSON() {
+            if (!reconciliationResult) return;
+            const json = JSON.stringify(reconciliationResult, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'reconciliation_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showMessage(text, type = 'info') {
+            const container = document.getElementById('messages');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.textContent = text;
+            container.insertBefore(msg, container.firstChild);
+            setTimeout(() => msg.remove(), 5000);
+        }
+
+        function clearAll() {
+            if (confirm('Clear all data?')) {
+                bankData = null;
+                ledgerData = null;
+                reconciliationResult = null;
+                document.getElementById('bankFile').value = '';
+                document.getElementById('ledgerFile').value = '';
+                const bankInfo = document.getElementById('bankInfo');
+                const ledgerInfo = document.getElementById('ledgerInfo');
+                if (bankInfo) {
+                    bankInfo.textContent = 'Click to upload';
+                    bankInfo.style.color = '';
+                    bankInfo.style.fontWeight = '';
+                }
+                if (ledgerInfo) {
+                    ledgerInfo.textContent = 'Click to upload';
+                    ledgerInfo.style.color = '';
+                    ledgerInfo.style.fontWeight = '';
+                }
+                document.getElementById('resultSection').style.display = 'none';
+                document.getElementById('tableSection').style.display = 'none';
+                document.getElementById('messages').innerHTML = '';
+                updateReconcileButton();
+                showMessage('All data cleared', 'success');
+            }
+        }
+
+        window.addEventListener('beforeunload', (e) => {
+            if (bankData || ledgerData || reconciliationResult) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+    </script>
+</body>
+</html>
